@@ -105,8 +105,6 @@ input,select,textarea,button{font-family:inherit}a{color:#3B82F6}
 </div>
 
 <!-- Google Identity Services -->
-<script src="https://accounts.google.com/gsi/client" async></script>
-
 <script>
 // ── Config ────────────────────────────────────────────────────────────────
 const DRIVE_FOLDER_ID = '1rMsAN081pCl24FPfGctGAiQ2maBN3UkA';
@@ -149,39 +147,42 @@ function saveLocal(){
   localStorage.setItem('crm_files',    JSON.stringify(state.files));
 }
 
-// ── Google OAuth ──────────────────────────────────────────────────────────
-let tokenClient;
+// ── Google OAuth (implicit redirect flow) ─────────────────────────────────
 window.addEventListener('load', () => {
-  // Try to restore token from session
+  // Check if we just came back from Google OAuth redirect
+  const hash = window.location.hash;
+  if (hash.includes('access_token')) {
+    const params = new URLSearchParams(hash.slice(1));
+    accessToken = params.get('access_token');
+    sessionStorage.setItem('crm_access_token', accessToken);
+    // Clean URL
+    history.replaceState(null, '', window.location.pathname);
+    updateAuthUI(true);
+    setSyncMsg('✓ Signed in', 'ok');
+    setTimeout(()=>setSyncMsg('','idle'), 3000);
+    return;
+  }
+  // Restore from session
   const stored = sessionStorage.getItem('crm_access_token');
   if (stored) { accessToken = stored; updateAuthUI(true); }
 });
 
-function initGoogleAuth() {
-  if (!window.google) { setTimeout(initGoogleAuth, 500); return; }
-  tokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: CLIENT_ID,
-    scope: SCOPES,
-    callback: (resp) => {
-      if (resp.error) { setSyncMsg('Auth error: ' + resp.error, 'error'); return; }
-      accessToken = resp.access_token;
-      sessionStorage.setItem('crm_access_token', accessToken);
-      updateAuthUI(true);
-      setSyncMsg('✓ Signed in', 'ok');
-      setTimeout(()=>setSyncMsg('','idle'),3000);
-    }
-  });
-}
-
 function signIn() {
-  if (!tokenClient) { initGoogleAuth(); setTimeout(signIn, 600); return; }
-  tokenClient.requestAccessToken();
+  const params = new URLSearchParams({
+    client_id: CLIENT_ID,
+    redirect_uri: REDIRECT_URI,
+    response_type: 'token',
+    scope: SCOPES,
+    include_granted_scopes: 'true',
+  });
+  window.location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + params.toString();
 }
 function signOut() {
-  if (accessToken && window.google) google.accounts.oauth2.revoke(accessToken);
   accessToken = null;
   sessionStorage.removeItem('crm_access_token');
   updateAuthUI(false);
+  setSyncMsg('Signed out', 'idle');
+  setTimeout(()=>setSyncMsg('','idle'), 2000);
 }
 function updateAuthUI(signedIn) {
   document.getElementById('sync-signin-btn').style.display = signedIn ? 'none' : 'block';
@@ -324,7 +325,6 @@ function saveFile(e){e.preventDefault();const f=new FormData(e.target);state.fil
 
 // ── Boot ──────────────────────────────────────────────────────────────────
 loadState();
-initGoogleAuth();
 renderTopbar();
 renderContent();
 </script>
